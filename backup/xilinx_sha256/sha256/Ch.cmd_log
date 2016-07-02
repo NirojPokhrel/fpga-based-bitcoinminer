@@ -1,0 +1,3 @@
+xst -intstyle ise -ifn "/home/niroj/AppliedEmbeddedSysProject/xilinx_sha256/sha256/Ch.xst" -ofn "/home/niroj/AppliedEmbeddedSysProject/xilinx_sha256/sha256/Ch.syr" 
+ngdbuild -intstyle ise -dd _ngo -nt timestamp -i -p xc3s100e-vq100-5 Ch.ngc Ch.ngd  
+map -intstyle ise -p xc3s100e-vq100-5 -cm area -ir off -pr off -c 100 -o Ch_map.ncd Ch.ngd Ch.pcf 
