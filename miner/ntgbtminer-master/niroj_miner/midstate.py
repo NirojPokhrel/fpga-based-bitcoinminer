@@ -104,5 +104,12 @@ def calculateMidstate(data, state=None, rounds=None):
         f = addu32(f, F0)
         g = addu32(g, G0)
         h = addu32(h, H0)
-
+    ga = a
+    gb = b
+    gc = c
+    gd = d
+    ge = e
+    gf = f
+    gg = g
+    gh = h
     return struct.pack('<IIIIIIII', a, b, c, d, e, f, g, h)
