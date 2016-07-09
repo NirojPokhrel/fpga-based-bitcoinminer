@@ -53,7 +53,7 @@ def rotateright(i,p):
 def addu32(*i):
     return sum(list(i))&0xFFFFFFFF
 
-def calculateMidstate(data, state=None, rounds=None):
+def calculateMidstate(data, state=None, rounds=None, debug=False):
     """Given a 512-bit (64-byte) block of (little-endian byteswapped) data,
     calculate a Bitcoin-style midstate. (That is, if SHA-256 were little-endian
     and only hashed the first block of input.)
@@ -61,14 +61,16 @@ def calculateMidstate(data, state=None, rounds=None):
     if len(data) != 64:
         raise ValueError('data must be 64 bytes long')
     w = list(struct.unpack('>IIIIIIIIIIIIIIII', data))
-    print w
+    if debug:
+        print w
 
 
     if state is not None:
         if len(state) != 32:
             raise ValueError('state must be 32 bytes long')
         a,b,c,d,e,f,g,h = struct.unpack('>IIIIIIII', state)
-        print "Second iteration:","a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
+        if debug:
+            print "Second iteration:","a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
         a_0, b_0, c_0, d_0, e_0, f_0, g_0, h_0 = a,b,c,d,e,f,g,h 
     else:
         a = A0
@@ -97,8 +99,8 @@ def calculateMidstate(data, state=None, rounds=None):
         s1 = rotateright(w[14],17) ^ rotateright(w[14],19) ^ (w[14] >> 10)
         w.append(addu32(w[0], s0, w[9], s1))
         w.pop(0)
-
-    print "Before", "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
+    if debug:
+        print "Before", "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
     if rounds is None:
         a = addu32(a, A0)
         b = addu32(b, B0)
@@ -126,5 +128,6 @@ def calculateMidstate(data, state=None, rounds=None):
     gf = f
     gg = g
     gh = h
-    print "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
+    if debug:
+        print "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
     return struct.pack('>IIIIIIII', a, b, c, d, e, f, g, h)

@@ -481,7 +481,7 @@ def standalone_miner(coinbase_message, address):
     while True:
         print "Mining new block template..."
         block_temp = rpc_getblocktemplate()
-        #mined_block, hps = block_mine(block_temp, coinbase_message, 0, address, timeout=60)
+        mined_block, hps = block_mine(block_temp, coinbase_message, 0, address, timeout=60)
         x, y = block_mine_with_midstate(block_temp, coinbase_message, 0, address, timeout=60)
         break
 if __name__ == "__main__":

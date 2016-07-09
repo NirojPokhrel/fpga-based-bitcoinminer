@@ -103,25 +103,3 @@ def bitcoinaddress2hash160(s):
     x = "%050x" % x
     # Discard 1-byte network byte at beginning and 4-byte checksum at the end
     return x[2:50-8]
-
-ser = None
-def initialize_serial():
-    print('Starting serial')
-    global ser
-    ser = serial.Serial(
-      port='/dev/ttyACM0',\
-      baudrate=115200,\
-      parity=serial.PARITY_NONE,\
-      stopbits=serial.STOPBITS_ONE,\
-      bytesize=serial.EIGHTBITS,\
-      timeout=10)
-    print("Connected to: " + ser.portstr)
-    ser.flushInput()
-    print("Chars waiting in buffer after flush: " + str(ser.inWaiting()))
-    print(ser.readline())
-
-def get_serial():
-    global ser
-    if ser is None:
-        initialize_serial()
-    return ser

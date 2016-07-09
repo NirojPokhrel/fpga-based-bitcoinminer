@@ -8,6 +8,7 @@ import struct
 import time
 import midstate
 import util
+import sha256_download
 
 ################################################################################
 # Transaction Coinbase and Hashing Functions
@@ -21,6 +22,7 @@ import util
 #       value:              (unsigned int) value
 #
 # Returns transaction data in ASCII Hex
+
 def tx_make_coinbase(coinbase_script, address, value):
     # See https://en.bitcoin.it/wiki/Transaction
 
@@ -161,6 +163,7 @@ def block_bits2target(bits):
 #       target:     (string) target in big endian binary
 #
 # Returns true if header_hash meets target, false if it does not.
+#Both block_hash and target_hash are in big endian format
 def block_check_target(block_hash, target_hash):
     # Header hash must be strictly less than or equal to target hash
     for i in range(len(block_hash)):
@@ -208,8 +211,10 @@ def block_make_submit(block):
 #
 # Returns tuple of (solved block, hashes per second) on finding a solution,
 # or (None, hashes per second) on timeout or nonce exhaustion.
-def block_mine(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False):
+def block_mine(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False, debug=False):
     # Add an empty coinbase transaction to the block template
+    if debug:
+        print "Algo 1 start:"
     coinbase_tx = {}
     block_template['transactions'].insert(0, coinbase_tx)
     # Add a nonce initialized to zero to the block template
@@ -225,12 +230,9 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
     hps_list = []
 
     # Loop through the extranonce
-    extranonce = extranonce_start
-    
-    
-    
-    
-    ##TEst start # Update the coinbase transaction with the extra nonce
+    extranonce = extranonce_start    
+
+    # Update the coinbase transaction with the extra nonce
     coinbase_script = coinbase_message + util.int2lehex(extranonce, 4)
     coinbase_tx['data'] = tx_make_coinbase(coinbase_script, address, block_template['coinbasevalue'])
     coinbase_tx['hash'] = tx_compute_hash(coinbase_tx['data'])
@@ -265,13 +267,6 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
             # Recompute the block hash
     block_hash = block_compute_raw_hash(block_header)
     
-    return (None, 0)
-    ##Test ends
-    
-    
-    
-    
-    '''
     while extranonce <= 0xffffffff:
 
         # Update the coinbase transaction with the extra nonce
@@ -296,6 +291,10 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
             # Recompute the block hash
             block_hash = block_compute_raw_hash(block_header)
 
+            if debug == True:
+                print "block_mine-> block_header:", util.bin2hex(block_header)
+                print "block_mine-> header_hash:[2]", util.bin2hex(block_hash)
+
             # Check if it the block meets the target target hash
             if block_check_target(block_hash, target_hash):
                 block_template['nonce'] = nonce
@@ -313,21 +312,26 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
                 if timeout != False and (time_stamp - time_start) > timeout:
                     hps_average = 0 if len(hps_list) == 0 else sum(hps_list)/len(hps_list)
                     return (None, hps_average)
-
+            if debug == True:
+                break
             nonce += 1
         extranonce += 1
+        if debug == True:
+            break
 
     # If we ran out of extra nonces, return none
     hps_average = 0 if len(hps_list) == 0 else sum(hps_list)/len(hps_list)
     return (None, hps_average)
-    '''
 
 ###############################################################################
 # Changes made by me 
 ###############################################################################
-def fpga_miner(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False):
+def fpga_miner(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False, debug=False):
     # Add an empty coinbase transaction to the block template
-
+    if debug:
+        print ""
+        print "Algo 2 start:"
+        print ""
     coinbase_tx = {}
     block_template['transactions'].insert(0, coinbase_tx)
     # Add a nonce initialized to zero to the block template
@@ -335,6 +339,9 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
 
     # Compute the target hash
     target_hash = block_bits2target(block_template['bits'])
+    if debug == True:
+        print block_template['bits']
+        print "target_hash", util.bin2hex(target_hash)
 
     # Mark our mine start time
     time_start = time.clock()
@@ -356,25 +363,22 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
     block_header = block_form_header(block_template)
     #TODO: CHECK IF WE NEED TO CHANGE THE ENDIANESS FOR CALCULATING THE MIDSTATE#
     #Block header should be in big endian#
-    print("BlockHeader", util.bin2hex(block_header))
     my_data = midstate.calculateMidstate(block_header[0:64])
     midstatesw = util.bin2hex(my_data)
     targetsw = util.bin2hex(target_hash)
     secondhalf = util.bin2hex(block_header[64:76])
-    new_data = util.hex2bin('00000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
-    second_head = block_header[64:76] + new_data
-    data_temp = midstate.calculateMidstate( second_head, my_data )
-    print('len of second_head:', len(second_head))
-    print('second_head:', util.bin2hex(second_head))
-    print('Final Hash: ', util.bin2hex(data_temp))
-    print('Target hash:', targetsw)
-    print('secondhalf:', secondhalf)
-    #midstatesw = '000000020597ba1f0cd423b2a3abb0259a54ee5f783077a4ad45fb6200000218' #Is this really the midvalue of below data ????
-    #targetsw = 'e2b15e9a3f2fb7da08768e99f02727e4227e02903e43a42b31511553101a051f'
-    #secondhalf = 'd1d7fba6603876570dd2031a'
+    if debug == True:
+        new_data = util.hex2bin('00000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
+        second_head = block_header[64:76] + new_data
+        data_temp = midstate.calculateMidstate( second_head, my_data, 64 )
+        print "fpga_mine-> block_header:", util.bin2hex(block_header)
+        print "midstate_calc:[1]", util.bin2hex(data_temp)
+        print "fpga_mine->header_hash first round[1]", hashlib.sha256(block_header).hexdigest()
+        print "fpga_mine-> header_hash:[2]", hashlib.sha256(data_temp).hexdigest()
+        print "fpga_mine->header_hash two round[2]", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
+        return None, 0
 
     ###COMMENTED FOR TESTING REST OF THE CODE###
-    '''
     import serial
     print('Starting serial')
 
@@ -442,7 +446,6 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
         if  line != b'':
             print(line)
     print('End')
-    '''
 
 
 
@@ -454,8 +457,8 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
 def standalone_miner(coinbase_message, address):
     print "Mining new block template..."
     block_template1 = util.rpc_getblocktemplate()
-    mined_block, hps = block_mine(block_template1, coinbase_message, 0, address, timeout=60)
-    fpga_miner(block_template1, coinbase_message, 0, address, timeout=60)
+    mined_block, hps = block_mine(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
+    x, y = fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
 
 ###Test Ends
             

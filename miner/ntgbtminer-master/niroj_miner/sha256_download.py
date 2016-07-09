@@ -186,14 +186,12 @@ class SHA256(object):
         assert not round_offset % 64, 'round_offset should be a multiple of 64'
 
         test = struct.unpack('>LLLLLLLLLLLLLLLL', message)
-        print test
         w = cls._expand_message(struct.unpack('>LLLLLLLLLLLLLLLL', message))
 
         midstate = state
         for i in range(64):
             midstate = cls._round(round_offset + i, w[i], midstate)
 
-        print "Before:", midstate
         return cls._finalize(midstate, state)
 
     @classmethod
@@ -271,7 +269,6 @@ class SHA256(object):
 
         while len(self.buffer) >= 64:
             self.state = self._process_block(self.buffer[:64], self.state, self.round_offset)
-            print "self.state:", self.state
             self.buffer = self.buffer[64:]
             self.round_offset += 64
 
@@ -287,8 +284,6 @@ class SHA256(object):
         final_state = self.state
         for block in self._pad_message(self.buffer, self.length):
             final_state = self._process_block(block, final_state, self.round_offset)
-            print "block:", util.bin2hex(block)
-        print "final_state", final_state
         return struct.pack('>LLLLLLLL', *final_state)
 
     def hexdigest(self):
