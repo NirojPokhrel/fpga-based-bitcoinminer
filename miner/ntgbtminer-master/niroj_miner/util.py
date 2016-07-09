@@ -103,3 +103,14 @@ def bitcoinaddress2hash160(s):
     x = "%050x" % x
     # Discard 1-byte network byte at beginning and 4-byte checksum at the end
     return x[2:50-8]
+
+
+def block_check_target(block_hash, target_hash):
+    # Header hash must be strictly less than or equal to target hash
+    for i in range(len(block_hash)):
+        if ord(block_hash[i]) == ord(target_hash[i]):
+            continue
+        elif ord(block_hash[i]) < ord(target_hash[i]):
+            return True
+        else:
+            return False

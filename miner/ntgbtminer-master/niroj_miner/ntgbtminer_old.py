@@ -9,6 +9,8 @@ import time
 import midstate
 import util
 import sha256_download
+import serial_comm
+import random
 
 ################################################################################
 # Transaction Coinbase and Hashing Functions
@@ -22,6 +24,8 @@ import sha256_download
 #       value:              (unsigned int) value
 #
 # Returns transaction data in ASCII Hex
+
+DEBUG_STRING = "MINER_MAIN"
 
 def tx_make_coinbase(coinbase_script, address, value):
     # See https://en.bitcoin.it/wiki/Transaction
@@ -296,7 +300,7 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
                 print "block_mine-> header_hash:[2]", util.bin2hex(block_hash)
 
             # Check if it the block meets the target target hash
-            if block_check_target(block_hash, target_hash):
+            if util.block_check_target(block_hash, target_hash):
                 block_template['nonce'] = nonce
                 block_template['hash'] = util.bin2hex(block_hash)
                 hps_average = 0 if len(hps_list) == 0 else sum(hps_list)/len(hps_list)
@@ -377,75 +381,22 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
         print "fpga_mine-> header_hash:[2]", hashlib.sha256(data_temp).hexdigest()
         print "fpga_mine->header_hash two round[2]", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
         return None, 0
-
-    ###COMMENTED FOR TESTING REST OF THE CODE###
-    import serial
-    print('Starting serial')
-
-    ser = serial.Serial(
-      port='/dev/ttyACM0',\
-      baudrate=115200,\
-      parity=serial.PARITY_NONE,\
-      stopbits=serial.STOPBITS_ONE,\
-      bytesize=serial.EIGHTBITS,\
-      timeout=10)
-    print("Connected to: " + ser.portstr)
-    ser.flushInput()
-    print("Chars waiting in buffer after flush: " + str(ser.inWaiting()))
-    print(ser.readline())
-    #Data used here are all hex.So, find different ways to change data into hex and then we can work accordingly.
-    ser.write(secondhalf[0:8].encode())
-    ser.write(b'\n')
-    ser.write(secondhalf[8:16].encode())
-    ser.write(b'\n')
-    ser.write(secondhalf[16:24].encode())
-    ser.write(b'\n')
-    print(ser.readline())
-    print(ser.readline())
-    print(ser.readline())
-    ser.write(midstatesw[0:8].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[8:16].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[16:24].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[24:32].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[32:40].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[40:48].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[48:56].encode())
-    ser.write(b'\n')
-    ser.write(midstatesw[56:64].encode())
-    ser.write(b'\n')
-    print(ser.readline())
-    print(ser.readline())
-    ser.write(targetsw[0:8].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[8:16].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[16:24].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[24:32].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[32:40].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[40:48].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[48:56].encode())
-    ser.write(b'\n')
-    ser.write(targetsw[56:64].encode())
-    ser.write(b'\n')
-    print(ser.readline())
-    print(ser.readline())
-    print(ser.readline())
-    done = 0
-    while(done == 0):
-        line = ser.readline()
-        if  line != b'':
-            print(line)
+    serial.write_data(secondhalf, midstatesw, targetsw)
+    count = 0
+    while(count < 12):
+        #For testing send the nonce data
+        nonce = random.randint(1, 10000)
+        x, y = serial.get_current_state(nonce=nonce)
+        if x != None:
+            print "Success", x, " for nonce=", y
+        block_header_new = block_header[0:76] + chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
+        print DEBUG_STRING, "nonce:", nonce
+        block_hash = block_compute_raw_hash(block_header_new)
+        print DEBUG_STRING, "block_hash", util.bin2hex(block_hash)
+        time.sleep(5)
+        count += 1
     print('End')
+    return (None, None)
 
 
 
@@ -457,8 +408,8 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
 def standalone_miner(coinbase_message, address):
     print "Mining new block template..."
     block_template1 = util.rpc_getblocktemplate()
-    mined_block, hps = block_mine(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
-    x, y = fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
+    #mined_block, hps = block_mine(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
+    x, y = fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
 
 ###Test Ends
             
@@ -489,7 +440,9 @@ def standalone_miner(coinbase_message, address):
             util.rpc_submitblock(submission)
 '''
 
+serial = None
 if __name__ == "__main__":
+    serial = serial_comm.MySerial(serial_port="/dev/pts/26", debug=False)
     standalone_miner(util.bin2hex("Hello from Niroj!"), "15PKyTs3jJ3Nyf3i6R7D9tfGCY1ZbtqWdv")
 '''
     str = '020000001fba9705b223d40c25b0aba35fee549aa477307862fb45ad180200000000000033d14883e297679e3f9a5eb108dab72ff0998e7622e427273e90027e'
