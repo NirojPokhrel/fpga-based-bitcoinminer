@@ -60,13 +60,16 @@ def calculateMidstate(data, state=None, rounds=None):
     """
     if len(data) != 64:
         raise ValueError('data must be 64 bytes long')
+    w = list(struct.unpack('>IIIIIIIIIIIIIIII', data))
+    print w
 
-    w = list(struct.unpack('<IIIIIIIIIIIIIIII', data))
 
     if state is not None:
         if len(state) != 32:
             raise ValueError('state must be 32 bytes long')
-        a,b,c,d,e,f,g,h = struct.unpack('<IIIIIIII', state)
+        a,b,c,d,e,f,g,h = struct.unpack('>IIIIIIII', state)
+        print "Second iteration:","a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
+        a_0, b_0, c_0, d_0, e_0, f_0, g_0, h_0 = a,b,c,d,e,f,g,h 
     else:
         a = A0
         b = B0
@@ -95,6 +98,7 @@ def calculateMidstate(data, state=None, rounds=None):
         w.append(addu32(w[0], s0, w[9], s1))
         w.pop(0)
 
+    print "Before", "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
     if rounds is None:
         a = addu32(a, A0)
         b = addu32(b, B0)
@@ -104,6 +108,16 @@ def calculateMidstate(data, state=None, rounds=None):
         f = addu32(f, F0)
         g = addu32(g, G0)
         h = addu32(h, H0)
+    else:
+        a = addu32(a, a_0)
+        b = addu32(b, b_0)
+        c = addu32(c, c_0)
+        d = addu32(d, d_0)
+        e = addu32(e, e_0)
+        f = addu32(f, f_0)
+        g = addu32(g, g_0)
+        h = addu32(h, h_0)
+
     ga = a
     gb = b
     gc = c
@@ -112,4 +126,5 @@ def calculateMidstate(data, state=None, rounds=None):
     gf = f
     gg = g
     gh = h
-    return struct.pack('<IIIIIIII', a, b, c, d, e, f, g, h)
+    print "a=", a, "b=", b, "c=", c, "d=", d, "e=", e, "f=", f, "g=", g, "h=", h
+    return struct.pack('>IIIIIIII', a, b, c, d, e, f, g, h)
