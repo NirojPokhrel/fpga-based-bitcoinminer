@@ -1,5 +1,3 @@
-# ntgbtminer - vsergeev at gmail
-# No Thrils GetBlockTemplate Bitcoin Miner
 import urllib2
 import base64
 import json
@@ -11,6 +9,8 @@ import util
 import sha256_download
 import serial_comm
 import random
+import midstate_little
+from config import PORT_ADDRESS
 
 ################################################################################
 # Transaction Coinbase and Hashing Functions
@@ -170,10 +170,12 @@ def block_bits2target(bits):
 #Both block_hash and target_hash are in big endian format
 def block_check_target(block_hash, target_hash):
     # Header hash must be strictly less than or equal to target hash
-    for i in range(len(block_hash)):
-        if ord(block_hash[i]) == ord(target_hash[i]):
+    bHashLower = block_hash.lower()
+    tHashLower = target_hash.lower()
+    for i in range(len(bHashLower)):
+        if ord(bHashLower[i]) == ord(tHashLower[i]):
             continue
-        elif ord(block_hash[i]) < ord(target_hash[i]):
+        elif ord(bHashLower[i]) < ord(tHashLower[i]):
             return True
         else:
             return False
@@ -266,10 +268,6 @@ def block_mine(block_template, coinbase_message, extranonce_start, address, time
     block_header = block_form_header(block_template)
 
     time_stamp = time.clock()
-            # Update the block header with the new 32-bit nonce
-    block_header = block_header[0:76] + chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
-            # Recompute the block hash
-    block_hash = block_compute_raw_hash(block_header)
     
     while extranonce <= 0xffffffff:
 
@@ -367,10 +365,17 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
     block_header = block_form_header(block_template)
     #TODO: CHECK IF WE NEED TO CHANGE THE ENDIANESS FOR CALCULATING THE MIDSTATE#
     #Block header should be in big endian#
+    local_hash_little(block_header)
+    local_hash_big(block_header)
+
+    return None
     my_data = midstate.calculateMidstate(block_header[0:64])
     midstatesw = util.bin2hex(my_data)
     targetsw = util.bin2hex(target_hash)
     secondhalf = util.bin2hex(block_header[64:76])
+    if True:
+        targetsw = "000fffff" + targetsw[8:len(targetsw)]
+        target_hash = util.hex2bin(targetsw)
     if debug == True:
         new_data = util.hex2bin('00000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
         second_head = block_header[64:76] + new_data
@@ -381,7 +386,39 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
         print "fpga_mine-> header_hash:[2]", hashlib.sha256(data_temp).hexdigest()
         print "fpga_mine->header_hash two round[2]", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
         return None, 0
-    serial.write_data(secondhalf, midstatesw, targetsw)
+
+    #serial.write_data(secondhalf, midstatesw, targetsw)
+
+    #local_sha256(block_header[64:76], my_data, target_hash )
+    #local_sha256_with_nonce(block_header[64:76], my_data, target_hash )
+    '''
+    print "midstatesw: ", midstatesw
+    print "secondhalf:", secondhalf
+    print "targetsw:", targetsw
+    print "midstatesw0", midstatesw[0:8]
+    print "midstatesw1", midstatesw[8:16]
+    print "midstatesw1", midstatesw[16:24]
+    print "midstatesw1", midstatesw[24:32]
+    print "midstatesw1", midstatesw[32:40]
+    print "midstatesw1", midstatesw[40:48]
+    print "midstatesw1", midstatesw[48:56]
+    print "midstatesw1", midstatesw[56:64]
+
+    print "targetsw0:", targetsw[0:8]
+    print "targetsw1:", targetsw[8:16]
+    print "targetsw2:", targetsw[16:24]
+    print "targetsw3:", targetsw[24:32]
+    print "targetsw4:", targetsw[32:40]
+    print "targetsw5:", targetsw[40:48]
+    print "targetsw6:", targetsw[48:56]
+    print "targetsw7:", targetsw[56:64]
+
+    print "secondhalf0", secondhalf[0:8]
+    print "secondhalf1", secondhalf[8:16]
+    print "secondhalf2", secondhalf[16:24]
+    '''
+    #double_hash( block_header[:76], target_hash)
+    return None
     count = 0
     while(count < 12):
         #For testing send the nonce data
@@ -398,6 +435,120 @@ def fpga_miner(block_template, coinbase_message, extranonce_start, address, time
     print('End')
     return (None, None)
 
+def local_sha256( secondhalf, midstate_data, target_hash ):
+    #TODO: make sure the nonce is started with 0x00000fff so that it can be started properly
+    print "Local sha256"
+    new_target = serial.get_target()
+    print "Target received:", new_target
+    nonce = 0
+    while nonce <= 0xffffffff:
+        #nonce_str = chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
+        nonce_str = chr((nonce >> 24) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 8) & 0xff) + chr(nonce & 0xff)
+        new_data = nonce_str + util.hex2bin('800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
+        second_head = secondhalf + new_data
+        temp_hash = midstate.calculateMidstate( second_head, midstate_data, 64 )
+        block_hash = hashlib.sha256(temp_hash).digest()
+
+        #print util.bin2hex(block_hash)
+        #print 'nonce_str: ', util.bin2hex( nonce_str )
+        #print 'Block hash', util.bin2hex( block_hash )
+        if util.block_check_target(util.bin2hex(block_hash), new_target):
+            print 'nonce_str: ', nonce_str
+            print 'Target hash found for nonce = ', nonce
+            print 'block_hash = ' , util.bin2hex( block_hash )
+            print 'target_hash = ' , new_target
+            return None, 0
+
+        nonce += 1
+
+    return None, 0
+
+def local_sha256_with_nonce( secondhalf, midstate_data, target_hash ):
+    print 'SHA with nonce'
+    new_target = serial.get_target()
+    nonce_str = util.hex2bin( serial.get_nonce() )
+    new_data = nonce_str + util.hex2bin('800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
+    second_head = secondhalf + new_data
+    temp_hash = midstate.calculateMidstate( second_head, midstate_data, 64 )
+    block_hash = hashlib.sha256(temp_hash).digest()
+    print "target:", new_target
+    print util.bin2hex( block_hash )
+
+def double_hash(block_header, target_hash):
+    print 'Double hash'
+    #block_header = block_header[::-1]
+    nonce = 0
+    while nonce <= 0xffffffff:
+        # Update the block header with the new 32-bit nonce
+        #block_header = block_header[0:76] + chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
+        block_header = block_header[0:76] + chr(nonce >> 24 & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 8) & 0xff) + chr(nonce  & 0xff)
+        # Recompute the block hash
+        block_hash = block_compute_raw_hash(block_header)
+        if util.block_check_target(block_hash, target_hash):
+            print "nonce: ", nonce
+            print util.bin2hex(block_hash)
+            break
+        nonce += 1
+
+def local_hash_little(block_header):
+    '''
+    count = 0
+    for i in range(16):
+        val = block_header[count:(count+4)]
+        if i == 0:
+            new_block = val[::-1]
+        else:
+            new_block = new_block + val[::-1]
+        count += 4
+    '''
+    print len(block_header[0:64])
+    new_block = convetToLittleEndian(block_header[0:64])
+    print "Block header:", util.bin2hex(block_header[:64])
+    print "New Block   :", util.bin2hex(new_block)
+       
+
+    my_data = midstate_little.calculateMidstate(new_block[0:64])
+    new_data = util.hex2bin('00000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
+    second_head = block_header[64:76] + new_data
+    '''
+    count = 0
+    for i in range(16):
+        val = second_head[count:(count+4)]
+        if i == 0:
+            new_block = val[::-1]
+        else:
+            new_block = new_block + val[::-1]
+        count += 4
+    '''
+    new_block = convetToLittleEndian(second_head)
+    new_temp = midstate_little.calculateMidstate( new_block, my_data, 64 )
+    print "Loop2:  ", util.bin2hex(second_head)
+    print "Little: ", util.bin2hex(new_block)
+    print "New Temp(hash)1", util.bin2hex(new_temp)
+    print "Level 1 hash  1", hashlib.sha256(block_header).hexdigest()
+    new_data = util.hex2bin('800000000000000000000000000000000000000000000000') + util.hex2bin('0000000000000100')
+    new_block = new_temp + convetToLittleEndian(new_data)
+    hash_calc = midstate_little.calculateMidstate( new_block )
+    print "New Temp(hash)2", util.bin2hex(hash_calc)
+    print "Level 1 hash  2", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
+    print util.bin2hex(hash_calc)
+
+def local_hash_big(block_header):
+    print "Lib Hash:", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
+    my_data = midstate.calculateMidstate(block_header[0:64])
+    new_data = util.hex2bin('00000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000280')
+    second_head = block_header[64:76] + new_data
+    temp_hash = midstate.calculateMidstate( second_head, my_data, 64 )
+    print "Level 1: ", util.bin2hex(hashlib.sha256(temp_hash).digest())
+    print "Just Level 1:", util.bin2hex(temp_hash)
+    new_data = temp_hash + util.hex2bin('800000000000000000000000000000000000000000000000') + util.hex2bin('0000000000000100')
+    hash_calc = midstate.calculateMidstate( new_data )
+    print util.bin2hex(hash_calc)
+
+
+def fpga_sha256( secondhalf_hex, midstate_hex, target_hash_hex ):
+    serial.write_data(secondhalf_hex, midstate_hex, target_hash_hex)
+
 
 
 ################################################################################
@@ -409,7 +560,21 @@ def standalone_miner(coinbase_message, address):
     print "Mining new block template..."
     block_template1 = util.rpc_getblocktemplate()
     #mined_block, hps = block_mine(block_template1, coinbase_message, 0, address, timeout=60, debug=True)
-    x, y = fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
+    fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
+
+def convetToLittleEndian(big_endian_str):
+    if len(big_endian_str)%4 != 0:
+        print "Should be multiple of 4"
+        return None
+    count = 0
+    for i in range(len(big_endian_str)/4):
+        val = big_endian_str[count:(count+4)]
+        if i == 0:
+            new_block = val[::-1]
+        else:
+            new_block = new_block + val[::-1]
+        count += 4
+    return new_block
 
 ###Test Ends
             
@@ -442,7 +607,7 @@ def standalone_miner(coinbase_message, address):
 
 serial = None
 if __name__ == "__main__":
-    serial = serial_comm.MySerial(serial_port="/dev/pts/26", debug=False)
+    serial = serial_comm.MySerial(serial_port=PORT_ADDRESS, debug=False)
     standalone_miner(util.bin2hex("Hello from Niroj!"), "15PKyTs3jJ3Nyf3i6R7D9tfGCY1ZbtqWdv")
 '''
     str = '020000001fba9705b223d40c25b0aba35fee549aa477307862fb45ad180200000000000033d14883e297679e3f9a5eb108dab72ff0998e7622e427273e90027e'

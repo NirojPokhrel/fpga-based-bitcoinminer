@@ -35,7 +35,7 @@ set_interface_attribs (int fd, int speed, int parity)
                                         // enable reading
         tty.c_cflag &= ~(PARENB | PARODD);      // shut off parity
         tty.c_cflag |= parity;
-        tty.c_cflag &= ~CSTOPB;
+        tty.c_cflag &= CSTOPB;
         tty.c_cflag &= ~CRTSCTS;
 
         if (tcsetattr (fd, TCSANOW, &tty) != 0)

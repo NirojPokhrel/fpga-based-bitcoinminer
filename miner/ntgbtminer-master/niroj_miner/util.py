@@ -1,4 +1,3 @@
-
 import random
 import json
 import urllib2
@@ -107,10 +106,27 @@ def bitcoinaddress2hash160(s):
 
 def block_check_target(block_hash, target_hash):
     # Header hash must be strictly less than or equal to target hash
-    for i in range(len(block_hash)):
-        if ord(block_hash[i]) == ord(target_hash[i]):
+    block_hash_lower = block_hash.lower()
+    target_hash_lower = target_hash.lower()
+    for i in range(len(block_hash_lower)):
+        if ord(block_hash_lower[i]) == ord(target_hash_lower[i]):
             continue
-        elif ord(block_hash[i]) < ord(target_hash[i]):
+        elif ord(block_hash_lower[i]) < ord(target_hash_lower[i]):
             return True
         else:
             return False
+
+
+def convetToLittleEndian(big_endian_str):
+    if len(big_endian_str)%4 != 0:
+        print "Should be multiple of 4"
+        return None
+    count = 0
+    for i in range(len(big_endian_str)/4):
+        val = big_endian_str[count:(count+4)]
+        if i == 0:
+            new_block = val[::-1]
+        else:
+            new_block = new_block + val[::-1]
+        count += 4
+    return new_block

@@ -41,8 +41,6 @@ class MySerial:
 			self.midstatesw = midstatesw
 			self.targetsw = targetsw
 			return
-		self.serial.write("Niroj Pokhrel\r\n")
-		return
 		ser = self.serial
 		ser.write(secondhalf[0:8].encode())
 		ser.write(b'\n')
@@ -87,10 +85,35 @@ class MySerial:
 		ser.write(b'\n')
 		ser.write(targetsw[56:64].encode())
 		ser.write(b'\n')
+		line = ser.readline()
+		words = line.split()
+		if words[0] == 'Target':
+			self.target = words[2]
+			print self.target
+		print line
 		print(ser.readline())
 		print(ser.readline())
-		print(ser.readline())
+		done = 0
+		print "Before sending: secondhalf is ", secondhalf
+		print "Before sending: midstatesw is ", midstatesw
+		print "Before sending: target is ", targetsw
+		while(done == 0):
+			line = ser.readline()
+			if  line != b'':
+				print(line)
+				words = line.split()
+				if words[0] == 'Nonce:':
+					self.nonce = words[1]
+					break
+		print('End')
+		ser.close()
 		return None
+
+	def get_target(self):
+		return self.target
+
+	def get_nonce(self):
+		return self.nonce
 
 	def get_hash_info(self):
 		if self.debug:
