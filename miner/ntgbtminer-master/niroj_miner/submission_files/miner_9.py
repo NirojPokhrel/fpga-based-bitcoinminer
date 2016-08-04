@@ -10,51 +10,84 @@ import sha256_download
 import serial_comm
 import random
 import midstate_little
-from config import PORT_ADDRESS, DEBUG_LOCAL_DATA, PUBLIC_KEY, COINBASE_MSG, SUBMIT_DATA, TARGET_REDUCE, REDUCE_NONCE
+from config import PORT_ADDRESS, DEBUG_LOCAL_DATA, PUBLIC_KEY, COINBASE_MSG, SUBMIT_DATA, TARGET_REDUCE
 
 
 serial = None
 DEBUG_STRING = "MINER_MAIN"
+################################################################################
+# Transaction Coinbase and Hashing Functions
+################################################################################
+
+# Create a coinbase transaction
+#
+# Arguments:
+#       coinbase_script:    (hex string) arbitrary script
+#       address:            (base58 string) bitcoin address
+#       value:              (unsigned int) value
+#
+# Returns transaction data in ASCII Hex
 
 
 def tx_make_coinbase(coinbase_script, address, value):
-    '''
-    The following coinbase has to be made exactly as per the guideline from the bitcoin team.
-    '''
+    # See https://en.bitcoin.it/wiki/Transaction
+
     # Create a pubkey script
     # OP_DUP OP_HASH160 <len to push> <pubkey> OP_EQUALVERIFY OP_CHECKSIG
     pubkey_script = "76" + "a9" + "14" + util.bitcoinaddress2hash160(address) + "88" + "ac"
 
     tx = ""
+    # version
     tx += "01000000"
+    # in-counter
     tx += "01"
+    # input[0] prev hash
     tx += "0"*64
+    # input[0] prev seqnum
     tx += "ffffffff"
+    # input[0] script len
     tx += util.int2varinthex(len(coinbase_script)/2)
+    # input[0] script
     tx += coinbase_script
+    # input[0] seqnum
     tx += "ffffffff"
+    # out-counter
     tx += "01"
+    # output[0] value (little endian)
     tx += util.int2lehex(value, 8)
+    # output[0] script len
     tx += util.int2varinthex(len(pubkey_script)/2)
+    # output[0] script
     tx += pubkey_script
+    # lock-time
     tx += "00000000"
 
     return tx
 
-
+# Compute the SHA256 Double Hash of a transaction
+#
+# Arguments:
+#       tx:    (hex string) ASCII Hex transaction data
+#
 # Returns a SHA256 double hash in big endian ASCII Hex
-def compute_hash_of_transaction(tx):
+def tx_compute_hash(tx):
     h1 = hashlib.sha256(util.hex2bin(tx)).digest()
     h2 = hashlib.sha256(h1).digest()
     return util.bin2hex(h2[::-1])
 
-
-def create_merkle_root(tx_hashes):
+# Compute the Merkle Root of a list of transaction hashes
+#
+# Arguments:
+#       tx_hashes:    (list) ASCII Hex transaction hashes
+#
+# Returns a SHA256 double hash in big endian ASCII Hex
+def tx_compute_merkle_root(tx_hashes):
     # Convert each hash into a binary string
     for i in range(len(tx_hashes)):
         # Reverse the hash from big endian to little endian
         tx_hashes[i] = util.hex2bin(tx_hashes[i])[::-1]
 
+    # Iteratively compute the merkle root hash
     while len(tx_hashes) > 1:
         # Duplicate last hash if the list is odd
         if len(tx_hashes) % 2 != 0:
@@ -62,30 +95,58 @@ def create_merkle_root(tx_hashes):
 
         tx_hashes_new = []
         for i in range(len(tx_hashes)/2):
+            # Concatenate the next two
             concat = tx_hashes.pop(0) + tx_hashes.pop(0)
+            # Hash them
             concat_hash = hashlib.sha256(hashlib.sha256(concat).digest()).digest()
+            # Add them to our working list
             tx_hashes_new.append(concat_hash)
         tx_hashes = tx_hashes_new
 
+    # Format the root in big endian ascii hex
     return util.bin2hex(tx_hashes[0][::-1])
 
+################################################################################
+# Block Preparation Functions
+################################################################################
 
-def make_header_from_template(block):
+# Form the block header
+#
+# Arguments:
+#       block:      (dict) block data in dictionary
+#
+# Returns a binary string
+def block_form_header(block):
     header = ""
 
+    # Version
     header += struct.pack("<L", block['version'])
+    # Previous Block Hash
     header += util.hex2bin(block['previousblockhash'])[::-1]
+    # Merkle Root Hash
     header += util.hex2bin(block['merkleroot'])[::-1]
+    # Time
     header += struct.pack("<L", block['curtime'])
+    # Target Bits
     header += util.hex2bin(block['bits'])[::-1]
+    # Nonce
     header += struct.pack("<L", block['nonce'])
     return header
 
-
-# SHA256 double hash in big endian binary
-def compute_double_hash_lib_call(header):
+# Compute the Raw SHA256 Double Hash of a block header
+#
+# Arguments:
+#       header:    (string) binary block header
+#
+# Returns a SHA256 double hash in big endian binary
+def block_compute_raw_hash(header):
     return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1]
 
+# Convert block bits to target
+#
+# Arguments:
+#       bits:       (string) compressed target in ASCII Hex
+#
 # Returns a target in big endian binary
 def block_bits2target(bits):
     # Bits: 1b0404cb
@@ -101,23 +162,55 @@ def block_bits2target(bits):
 
     return target
 
+# Check if a block header hash meets the target hash
+#
+# Arguments:
+#       block_hash: (string) block hash in big endian binary
+#       target:     (string) target in big endian binary
+#
+# Returns true if header_hash meets target, false if it does not.
+#Both block_hash and target_hash are in big endian format
+def block_check_target(block_hash, target_hash):
+    # Header hash must be strictly less than or equal to target hash
+    bHashLower = block_hash.lower()
+    tHashLower = target_hash.lower()
+    for i in range(len(bHashLower)):
+        if ord(bHashLower[i]) == ord(tHashLower[i]):
+            continue
+        elif ord(bHashLower[i]) < ord(tHashLower[i]):
+            return True
+        else:
+            return False
+
+# Format a solved block into the ASCII Hex submit format
+#
+# Arguments:
+#       block:      (dict) block
+#
 # Returns block in ASCII Hex submit format
-def create_block_for_submission(block):
-    submission_block = ""
+def block_make_submit(block):
+    subm = ""
 
-    submission_block += util.bin2hex(make_header_from_template(block))
-    submission_block += util.int2varinthex(len(block['transactions']))
+    # Block header
+    subm += util.bin2hex(block_form_header(block))
+    # Number of transactions as a varint
+    subm += util.int2varinthex(len(block['transactions']))
+    # Concatenated transactions data
     for tx in block['transactions']:
-        submission_block += tx['data']
+        subm += tx['data']
 
-    return submission_block
+    return subm
 
-def fpga_miner(block_template, coinbase_message, address, debug=False):
+################################################################################
+# Mining Loop
+################################################################################
+
+def fpga_miner(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False, debug=False):
     # Add an empty coinbase transaction to the block template
     if debug:
-        print ("")
-        print ("Algorithm start:")
-        print ("")
+        print ""
+        print "Algorithm start:"
+        print ""
     coinbase_tx = {}
     block_template['transactions'].insert(0, coinbase_tx)
     # Add a nonce initialized to zero to the block template
@@ -132,30 +225,29 @@ def fpga_miner(block_template, coinbase_message, address, debug=False):
     # Initialize our running average of hashes per second
     hps_list = []
 
-    coinbase_script = coinbase_message
+    # Loop through the extranonce
+    extranonce = extranonce_start
+    coinbase_script = coinbase_message + util.int2lehex(extranonce, 4)
     coinbase_tx['data'] = tx_make_coinbase(coinbase_script, address, block_template['coinbasevalue'])
-    coinbase_tx['hash'] = compute_hash_of_transaction(coinbase_tx['data'])
+    coinbase_tx['hash'] = tx_compute_hash(coinbase_tx['data'])
     
-
     # Recompute the merkle root
     tx_hashes = [tx['hash'] for tx in block_template['transactions']]
-    block_template['merkleroot'] = create_merkle_root(tx_hashes)
+    block_template['merkleroot'] = tx_compute_merkle_root(tx_hashes)
 
     # Reform the block header
-    block_header = make_header_from_template(block_template)
+    block_header = block_form_header(block_template)
     #Block header should be in big endian#
     #local_hash_little(block_header)
     #local_hash_big(block_header)
-
     my_data = midstate.calculateMidstate(block_header[0:64])
 
     midstatesw = util.bin2hex(my_data)
     targetsw = util.bin2hex(target_hash)
     secondhalf = util.bin2hex(block_header[64:76])
-    if REDUCE_NONCE:
+    if True:
         targetsw = TARGET_REDUCE + targetsw[8:len(targetsw)]
         target_hash = util.hex2bin(targetsw)
-
     if debug == True:
         '''
         This is used to checking the hash generation through the local information!!!
@@ -170,13 +262,13 @@ def fpga_miner(block_template, coinbase_message, address, debug=False):
         print "fpga_mine->header_hash two round[2]", hashlib.sha256(hashlib.sha256(block_header).digest()).hexdigest()
         return None, 0
 
-    time_stamp = time.time()
+    time_stamp = time.clock()
     serial.write_data(secondhalf, midstatesw, targetsw)
-    time_elapsed = time.time() - time_stamp
+    time_elapsed = time.clock() - time_stamp
     print "Time Elapsed( FPGA - MINER ):", time_elapsed
-    time_stamp = time.time()
+    time_stamp = time.clock()
     double_hash( block_header[:76], target_hash)
-    time_elapsed = time.time() - time_stamp
+    time_elapsed = time.clock() - time_stamp
     print "Time Elapsed( PC - MINER ):", time_elapsed
     if SUBMIT_DATA:
         block_submission(block_template, block_header, ser.get_nonce(), target_hash)
@@ -184,13 +276,13 @@ def fpga_miner(block_template, coinbase_message, address, debug=False):
 
 def block_submission(block_template, block_header, nonce, target_hash):
     nonce_str = chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
-    block_hash = compute_double_hash_lib_call(block_header+nonce_str)
+    block_hash = block_compute_raw_hash(block_header+nonce_str)
     if util.block_check_target(util.bin2hex(block_hash), target_hash):
         #Submit the data again
         block_template['nonce'] = nonce
         block_template['hash'] = bin2hex(block_hash)
         print "Solved a block! Block hash:", mined_block['hash']
-        submission = create_block_for_submission(mined_block)
+        submission = block_make_submit(mined_block)
         print "Submitting:", submission, "\n"
         rpc_submitblock(submission)
     return
@@ -237,7 +329,7 @@ def double_hash(block_header, target_hash):
         block_header = block_header[0:76] + chr(nonce & 0xff) + chr((nonce >> 8) & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 24) & 0xff)
         #block_header = block_header[0:76] + chr(nonce >> 24 & 0xff) + chr((nonce >> 16) & 0xff) + chr((nonce >> 8) & 0xff) + chr(nonce  & 0xff)
         # Recompute the block hash
-        block_hash = compute_double_hash_lib_call(block_header)
+        block_hash = block_compute_raw_hash(block_header)
         if util.block_check_target(block_hash, target_hash):
             print "nonce: ", nonce
             print util.bin2hex(block_hash)
@@ -294,55 +386,31 @@ def fpga_miner_with_debug_data():
     if True:
         targetsw = TARGET_REDUCE + targetsw[8:len(targetsw)]
         target_hash = util.hex2bin(targetsw)
-
-    time_stamp = time.time()
+    time_stamp = time.clock()
     serial.write_data(secondhalf, midstatesw, targetsw)
-    time_elapsed = time.time() - time_stamp
+    time_elapsed = time.clock() - time_stamp
     print "Time Elapsed( FPGA - MINER ):", time_elapsed
-    time_stamp = time.time()
+    time_stamp = time.clock()
     double_hash( block_header[:76], target_hash)
-    time_elapsed = time.time() - time_stamp
+    time_elapsed = time.clock() - time_stamp
     print "Time Elapsed( PC - MINER ):", time_elapsed
 
-def performance_measurement_for_different_difficulty():
-    block_header_str = "000000202fa8edaec2e28b3b6a9f81b2f4dc572e3b76ba87ffd934fe8001000000000000821e03b6e528af7cdeea67e2c59373a4d6b351e036acf6a3f23712df3f08c2f5d0a88857e28a011a"
-    target_hash_str = "000000000000018ae20000000000000000000000000000000000000000000000"
-    block_header = util.hex2bin(block_header_str)
-    target_hash = util.hex2bin(target_hash_str)
-    my_data = midstate.calculateMidstate(block_header[0:64])
-    midstatesw = util.bin2hex(my_data)
-    targetsw = util.bin2hex(target_hash)
-    secondhalf = util.bin2hex(block_header[64:76])
-    value = ["FFFFFFFF", "0FFFFFFF", "07FFFFFF", "00FFFFFF", "007FFFFF", "000FFFFF", "0007FFFF", "0000FFFF", "00007FFF",
-    "00000FFF", "000007FF", "000000FF", "0000007F", "0000000F"]
-    count = 0 #Increase the value of target by starting from
-    while(count < (len(value))):
-        targetsw = value[count] + targetsw[8:len(targetsw)]
-        target_hash = util.hex2bin(targetsw)
-        time_stamp = time.time()
-        serial.write_data(secondhalf, midstatesw, targetsw)
-        new_time_stamp = time.time()
-        time_elapsed = new_time_stamp - time_stamp
-        print "Time Elapsed( FPGA - Miner ):", time_elapsed
-        count += 1
 
-
-def start_miner(coinbase_message, address):
-    print "FPGA Miner"
+def standalone_miner(coinbase_message, address):
+    print "Mining new block template..."
     if DEBUG_LOCAL_DATA:
         fpga_miner_with_debug_data()
-        #performance_measurement_for_different_difficulty()
     else:
         if SUBMIT_DATA:
             while True:
                 block_template1 = util.rpc_getblocktemplate()
-                fpga_miner(block_template1, coinbase_message, address, debug=False)
+                fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
         else:
             block_template1 = util.rpc_getblocktemplate()
-            fpga_miner(block_template1, coinbase_message, address, debug=False)
+            fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
 
 
 
 if __name__ == "__main__":
-    #serial = serial_comm.MySerial(serial_port=PORT_ADDRESS, debug=False)
-    start_miner(util.bin2hex(COINBASE_MSG), PUBLIC_KEY)
+    serial = serial_comm.MySerial(serial_port=PORT_ADDRESS, debug=False)
+    standalone_miner(util.bin2hex(COINBASE_MSG), PUBLIC_KEY)

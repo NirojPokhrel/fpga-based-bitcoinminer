@@ -10,7 +10,7 @@ import sha256_download
 import serial_comm
 import random
 import midstate_little
-from config import PORT_ADDRESS, DEBUG_LOCAL_DATA, PUBLIC_KEY, COINBASE_MSG, SUBMIT_DATA, TARGET_REDUCE, REDUCE_NONCE
+from config import PORT_ADDRESS, DEBUG_LOCAL_DATA, PUBLIC_KEY, COINBASE_MSG, SUBMIT_DATA, TARGET_REDUCE
 
 
 serial = None
@@ -112,19 +112,19 @@ def create_block_for_submission(block):
 
     return submission_block
 
-def fpga_miner(block_template, coinbase_message, address, debug=False):
+def fpga_miner(block_template, coinbase_message, extranonce_start, address, timeout=False, debugnonce_start=False, debug=False):
     # Add an empty coinbase transaction to the block template
     if debug:
-        print ("")
-        print ("Algorithm start:")
-        print ("")
+        print ""
+        print "Algorithm start:"
+        print ""
     coinbase_tx = {}
     block_template['transactions'].insert(0, coinbase_tx)
     # Add a nonce initialized to zero to the block template
     block_template['nonce'] = 0
 
     # Compute the target hash
-    target_hash = block_bits2target(block_template['bits'])
+    target_hash = util.bin2hex(block_bits2target(block_template['bits']))
     if debug == True:
         print block_template['bits']
         print "target_hash", util.bin2hex(target_hash)
@@ -132,11 +132,12 @@ def fpga_miner(block_template, coinbase_message, address, debug=False):
     # Initialize our running average of hashes per second
     hps_list = []
 
-    coinbase_script = coinbase_message
+    # Loop through the extranonce
+    extranonce = extranonce_start
+    coinbase_script = coinbase_message + util.int2lehex(extranonce, 4)
     coinbase_tx['data'] = tx_make_coinbase(coinbase_script, address, block_template['coinbasevalue'])
     coinbase_tx['hash'] = compute_hash_of_transaction(coinbase_tx['data'])
     
-
     # Recompute the merkle root
     tx_hashes = [tx['hash'] for tx in block_template['transactions']]
     block_template['merkleroot'] = create_merkle_root(tx_hashes)
@@ -146,16 +147,14 @@ def fpga_miner(block_template, coinbase_message, address, debug=False):
     #Block header should be in big endian#
     #local_hash_little(block_header)
     #local_hash_big(block_header)
-
     my_data = midstate.calculateMidstate(block_header[0:64])
 
     midstatesw = util.bin2hex(my_data)
     targetsw = util.bin2hex(target_hash)
     secondhalf = util.bin2hex(block_header[64:76])
-    if REDUCE_NONCE:
+    if True:
         targetsw = TARGET_REDUCE + targetsw[8:len(targetsw)]
         target_hash = util.hex2bin(targetsw)
-
     if debug == True:
         '''
         This is used to checking the hash generation through the local information!!!
@@ -294,7 +293,6 @@ def fpga_miner_with_debug_data():
     if True:
         targetsw = TARGET_REDUCE + targetsw[8:len(targetsw)]
         target_hash = util.hex2bin(targetsw)
-
     time_stamp = time.time()
     serial.write_data(secondhalf, midstatesw, targetsw)
     time_elapsed = time.time() - time_stamp
@@ -327,8 +325,9 @@ def performance_measurement_for_different_difficulty():
         count += 1
 
 
-def start_miner(coinbase_message, address):
+def standalone_miner(coinbase_message, address):
     print "FPGA Miner"
+
     if DEBUG_LOCAL_DATA:
         fpga_miner_with_debug_data()
         #performance_measurement_for_different_difficulty()
@@ -336,13 +335,13 @@ def start_miner(coinbase_message, address):
         if SUBMIT_DATA:
             while True:
                 block_template1 = util.rpc_getblocktemplate()
-                fpga_miner(block_template1, coinbase_message, address, debug=False)
+                fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
         else:
             block_template1 = util.rpc_getblocktemplate()
-            fpga_miner(block_template1, coinbase_message, address, debug=False)
+            fpga_miner(block_template1, coinbase_message, 0, address, timeout=60, debug=False)
 
 
 
 if __name__ == "__main__":
-    #serial = serial_comm.MySerial(serial_port=PORT_ADDRESS, debug=False)
-    start_miner(util.bin2hex(COINBASE_MSG), PUBLIC_KEY)
+    serial = serial_comm.MySerial(serial_port=PORT_ADDRESS, debug=False)
+    standalone_miner(util.bin2hex(COINBASE_MSG), PUBLIC_KEY)

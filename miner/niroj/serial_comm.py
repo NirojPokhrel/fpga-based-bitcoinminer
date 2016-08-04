@@ -24,7 +24,6 @@ class MySerial:
 			bytesize=serial.EIGHTBITS, timeout=10)
 		print("Connected to: " + self.serial.portstr)
 		self.serial.flushInput()
-		print("Chars waiting in buffer after flush: " + str(self.serial.inWaiting()))
 		print(self.serial.readline())
 
 	#Data used here are all hex.
@@ -47,7 +46,16 @@ class MySerial:
 		port.write(b'\n')
 		port.write(data_remaining [16:24].encode())
 		port.write(b'\n')
-		print(port.readline())
+		read1 = port.readline()
+		print "read1", read1
+		words = read1.split()
+		if words[2].lower() != data_remaining:
+			print "Something went wrong in communication"
+			print "Original Value: ", data_remaining, "  Received value: ", read1
+			print "Please reset the serail link. Restart the board and try again"
+			return
+		else:
+			print read1
 		print(port.readline())
 		print(port.readline())
 		port.write(midstate_hex [0:8].encode())
@@ -86,6 +94,7 @@ class MySerial:
 		port.write(b'\n')
 		line = port.readline()
 		words = line.split()
+		#We are storing the target for future reference if needed for dubuggin by other part of code
 		if words[0] == 'Target':
 			self.target = words[2]
 			print self.target
@@ -101,8 +110,11 @@ class MySerial:
 				if words[0] == 'Nonce:':
 					self.nonce = words[1]
 					break
+				elif words[0] == 'Fail':
+					self.nonce = 0
+					break
 		print('End')
-		port.close()
+		#port.close()
 		return None
 
 	def get_target(self):
@@ -113,6 +125,7 @@ class MySerial:
 
 	'''
 	Can be changed to get the data from the serial in between!!!
+	For debugging purpose only !!!!
 	'''
 	def get_hash_info(self):
 		if self.debug:

@@ -1,0 +1,27 @@
+calculating target hash string === target_hexstr = '%064x' % (mant * (1<<(8*(exp - 3))))
+
+http://www.righto.com/2014/02/bitcoin-mining-hard-way-algorithms.html
+
+
+## Convert current nbits into a big-endian string
+nbits_calc = hexlify(nbits[::-1])
+
+## The nbits calculation is base-256
+base = 256
+
+## The nbits exponent is the the first byte of the nBits
+exponent = int(nbits_calc[0:2], 16) - 3
+## The nbits significand is the other three bytes
+significand = int(nbits_calc[2:8], 16)
+
+## Do the nbits calculation
+target = significand * ( base ** exponent )
+
+Things to do:
+
+1. The target value should be reversed. Currently it is in big endian format but probably it is being checked as a little endian in VHDL. Need to check it???
+Target should be in little endian to accomodate the code in VHDL.
+After changing the target, it can be so done that double hash of header has to be [::-1]
+
+2. What about the nonce?How should the nonce be? Should it be in proper format?
+Nonce should in little endian form when we are putting it for calculating hash.
